@@ -84,6 +84,9 @@ body .detail-grid{gap:8px 14px;margin:9px 0}
 
 
 @media(max-width:650px){body #return-buckets{grid-template-columns:repeat(2,1fr)}body .table-scroll{max-height:58vh}body .chart svg{height:135px}body .favorite-searches button,body .filter-toggle{min-height:44px}body .bars{max-height:180px}body .production-tracking{padding:10px}}
+
+header{padding:10px 24px;gap:14px;flex-wrap:wrap}.compact-brand{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}.compact-brand strong{font-size:22px;letter-spacing:.1px}.compact-brand span{font-size:16px;color:#d8e9e5}.preview-banner{background:#e7f2ed;color:#285c4f;padding:4px 24px;font-size:11px}main{padding:10px 24px}.metrics{gap:8px}.metric{padding:8px 11px}.metric strong{font-size:25px;margin:1px 0}.health{margin:4px 0 6px}.heading{margin:0 0 5px}.heading h1,.heading .eyebrow{display:none}.heading{justify-content:space-between!important;gap:12px}.heading #snapshot{font-size:11px}.heading .snapshot-note{text-align:left;font-size:11px}.heading{justify-content:flex-start}#views{margin-bottom:7px}#views button{padding:6px 10px}.filters{padding:8px 11px;gap:8px}.scope-bar{padding:4px 11px}.favorite-fold{border-top:1px solid #dce5e3}.favorite-fold>summary{padding:5px 11px;font-size:12px}.favorite-searches{border:0}.breakdown-heading{margin:8px 0 4px}.breakdown-grid{gap:9px;margin-bottom:8px}body .breakdown-grid>.panel{padding:0}body .breakdown-grid .panel-heading{padding:8px 12px 5px}body .bars{max-height:160px}body .bar-row{padding:3px 0}.bar-row{padding-top:3px;padding-bottom:3px}.bar-track{margin-top:2px}.results{padding:9px 12px}.pricing-note{margin:4px 12px 8px;font-size:11px}#monthly-proposal{margin-bottom:12px}html{scroll-padding-top:12px}@media(max-width:700px){header{padding:10px 14px}.compact-brand strong{font-size:19px}.compact-brand span{font-size:14px}main{padding:10px 12px}.preview-banner{padding:5px 14px}.metric strong{font-size:23px}}
+.table-scroll{max-height:580px!important}#monthly-movement{padding:16px;margin:14px 0}.monthly-chart{overflow-x:auto}.monthly-chart svg{display:block;width:100%;min-width:560px;max-height:300px}.monthly-table{width:100%;font-size:12px}.heading #capture{font-size:11px}.compact-brand strong{font-size:22px}.compact-brand span{font-size:16px}
 </style></head>
 <body><header><div class="brand">EV6 <span>2027 Tracker</span></div><div class="header-links"><a href="#movement">Trends</a><a href="#inventory">Inventory</a><a href="#returns">Reappearances</a><a href="#research">Research</a></div><span class="readonly">Read-only daily snapshot</span></header>
 <main><div class="heading"><div><p class="eyebrow">KIA EV6 &middot; MODEL YEAR 2027 &middot; NATIONAL INVENTORY</p><h1>Inventory &amp; market movement</h1><p class="muted" id="capture"></p></div><div class="snapshot-note" id="freshness"></div></div>
@@ -799,6 +802,39 @@ for(const [n,label] of [[data.rows.filter(r=>r.lifecycle==='candidate_missing').
 render();savedList();trends();if(location.hash.startsWith('#search=')){try{const raw=decodeURIComponent(location.hash.slice(8));if(raw.length>12000)throw Error();apply(JSON.parse(raw));}catch{$('message').textContent='Shared search could not be read.';}}
 
 
+
+(()=>{
+ const m=document.querySelector('main'),original=[...m.children],brand=document.querySelector('header .brand');
+ const ev3=!!data.metrics;brand.className='compact-brand';const title=el('strong',ev3?'EV3 NATIONAL INVENTORY':`EV6 ${data.model_year} NATIONAL INVENTORY`);brand.replaceChildren(title,el('span','Inventory & market movement'));
+ const favorites=document.querySelector('.favorite-searches');if(favorites){const fold=el('details',undefined,'favorite-fold');fold.append(el('summary','Favorite searches - save, manage or share'),favorites);document.getElementById('inventory').append(fold);}
+ const et=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'});
+ const date=s=>{const parts=Object.fromEntries(et.formatToParts(new Date(s)).map(x=>[x.type,x.value]));return `${parts.year}-${parts.month}-${parts.day}`;};
+ function calculate(){
+  if(data.monthlyMovement)return data.monthlyMovement;
+  const stamps=data.trends.map(t=>t.captured_at).sort((a,b)=>Date.parse(a)-Date.parse(b));if(!stamps.length)return {months:[]};
+  const baseline=stamps[0],through=stamps.at(-1),dates=[...new Set(stamps.map(date))].sort(),newVins={},sales={},seen=new Set(),open=new Set();
+  for(const r of data.rows){if(seen.has(r.vin))throw Error('Duplicate monthly VIN');seen.add(r.vin);if(Date.parse(r.first_seen)>Date.parse(baseline)&&Date.parse(r.first_seen)<=Date.parse(through)){const key=date(r.first_seen).slice(0,7);newVins[key]=(newVins[key]||0)+1;}}
+  for(const e of data.return_history?.open_episodes||[]){if(e.last_status!=='DS')continue;if(open.has(e.vin))throw Error('Duplicate monthly open episode');open.add(e.vin);const key=date(e.first_absent).slice(0,7);sales[key]=(sales[key]||0)+1;}
+  const months=[];let [y,n]=date(baseline).slice(0,7).split('-').map(Number);const end=date(through).slice(0,7),start=date(baseline).slice(0,7);
+  while(`${y}-${String(n).padStart(2,'0')}`<=end){const key=`${y}-${String(n).padStart(2,'0')}`,coverage=dates.filter(d=>d.startsWith(key)).length;months.push({month:key,newVins:coverage?(newVins[key]||0):null,presumedSales:coverage?(sales[key]||0):null,captureDays:coverage,partial:key===start||key===end});if(++n===13){n=1;y++;}}
+  return {months,baseline,through,coverageDates:dates,estimateRule:'DS disappearance confirmed after two complete missing runs; returns removed.'};
+ }
+ const evidence=calculate();window.monthlyMovementEvidence=evidence;
+ const section=el('section',undefined,'panel');section.id='monthly-movement';section.append(el('h2','Monthly new VINs & presumed sales'));
+ section.append(el('p','New VINs: unique first observations after the initial baseline. Presumed sales: currently unresolved DS disappearances, grouped by first-absence month. Estimate, not confirmed transactions.','muted'));
+ const legend=el('p');legend.append(el('span','New observed VINs (teal) · '),el('span','Unresolved presumed sales (orange)'));section.append(legend);
+ const plot=el('div',undefined,'monthly-chart'),ns='http://www.w3.org/2000/svg';function svg(tag,attrs,text){const x=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))x.setAttribute(k,v);if(text!==undefined)x.textContent=text;return x;}
+ const rows=evidence.months||[],w=Math.max(650,rows.length*150),chart=svg('svg',{viewBox:`0 0 ${w} 300`,role:'img','aria-label':'Monthly first observations and current unresolved presumed-sales estimates'}),max=Math.max(1,...rows.flatMap(r=>[r.newVins||0,r.presumedSales||0]));
+ for(let i=0;i<=4;i++){const v=Math.ceil(max*i/4),y=235-v/max*185;chart.append(svg('line',{x1:50,x2:w-15,y1:y,y2:y,stroke:'#dce5e3'}),svg('text',{x:44,y:y+4,'text-anchor':'end',fill:'#62747b','font-size':12},v));}
+ rows.forEach((r,i)=>{const x=65+i*(w-70)/Math.max(1,rows.length),bw=Math.min(42,(w-90)/Math.max(1,rows.length)/3);for(const [j,key,color] of [[0,'newVins','#147d71'],[1,'presumedSales','#cc8241']]){const v=r[key];if(v!==null){const bar=svg('rect',{x:x+j*(bw+5),y:235-v/max*185,width:bw,height:v/max*185,rx:3,fill:color,tabindex:0});bar.append(svg('title',{},`${r.month}: ${key==='newVins'?'new observed VINs':'unresolved presumed sales'} ${v}`));chart.append(bar);}}chart.append(svg('text',{x:x+bw,y:258,'text-anchor':'middle','font-size':12,fill:'#19313d'},r.month),svg('text',{x:x+bw,y:275,'text-anchor':'middle','font-size':11,fill:'#62747b'},r.captureDays?(r.partial?'Partial / to date':'Observed month'):'No coverage'));});plot.append(chart);section.append(plot);
+ const details=el('details');details.append(el('summary','Monthly values and coverage'));const table=el('table',undefined,'monthly-table'),head=el('tr');for(const t of ['Month','New observed VINs','Unresolved presumed sales','Complete capture days'])head.append(el('th',t));const thead=el('thead');thead.append(head);table.append(thead);const body=el('tbody');for(const r of rows){const tr=el('tr');for(const v of [r.month+(r.partial?' (partial / to date)':''),r.newVins??'N/A',r.presumedSales??'N/A',r.captureDays])tr.append(el('td',String(v)));body.append(tr);}table.append(body);details.append(table);section.append(details);
+ section.append(el('p',`${evidence.estimateRule||''} Baseline ${evidence.baseline?date(evidence.baseline):'unavailable'}; through ${evidence.through?date(evidence.through):'unavailable'} (Eastern). Initial baseline inventory is excluded. Returns can revise earlier month estimates; repeated disappearances count only the latest open episode. Months without complete capture coverage are N/A, not zero. Collection gaps do not prove absence. First observation is not production date.`,'muted'));
+ if(!ev3&&data.model_year===2026)section.append(el('p','Historical coverage changed from 7 to 59 search areas. Discovery changes may reflect search coverage, not new production or sales.','muted'));
+ const used=new Set();function add(node){if(node&&!used.has(node)){m.append(node);used.add(node);}}
+ m.replaceChildren();for(const q of ['.heading','.metrics','.health','#views','#inventory','.breakdown-heading','.breakdown-grid','#vehicle-table'])add(original.find(n=>n.matches(q)));add(section);
+ for(const q of ['.production-tracking','#vin-history','#movement','.history-details:not(#vin-history):not(#research)','.method','#daily-baseline','#returns','#research','footer'])for(const node of original.filter(n=>n.matches(q)))add(node);
+ for(const node of original)add(node);
+})();
 
 // Observation-only equivalents of EV3's history panels. Payloads retain EV6 rules.
 function renderHistoryPanels(){
