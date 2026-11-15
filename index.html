@@ -91,6 +91,9 @@ header{padding:10px 24px;gap:14px;flex-wrap:wrap}.compact-brand{display:flex;ali
 button.metric[data-summary-metric]{display:block;width:100%;min-height:44px;cursor:pointer;text-align:left;font:inherit;color:inherit}
 button.metric[data-summary-metric]:hover{border-color:var(--teal)}
 button.metric[data-summary-metric]:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+
+/* Keep the dark Current Inventory card readable after button reset. */
+button.metric[data-summary-metric="current"]{color:#fff}
 </style></head>
 <body><header><div class="brand">EV6 <span>2027 Tracker</span></div><div class="header-links"><a href="#movement">Trends</a><a href="#inventory">Inventory</a><a href="#returns">Reappearances</a><a href="#research">Research</a></div><span class="readonly">Read-only daily snapshot</span></header>
 <main><div class="heading"><div><p class="eyebrow">KIA EV6 &middot; MODEL YEAR 2027 &middot; NATIONAL INVENTORY</p><h1>Inventory &amp; market movement</h1><p class="muted" id="capture"></p></div><div class="snapshot-note" id="freshness"></div></div>
