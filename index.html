@@ -91,9 +91,15 @@ header{padding:10px 24px;gap:14px;flex-wrap:wrap}.compact-brand{display:flex;ali
 button.metric[data-summary-metric]{display:block;width:100%;min-height:44px;cursor:pointer;text-align:left;font:inherit;color:inherit}
 button.metric[data-summary-metric]:hover{border-color:var(--teal)}
 button.metric[data-summary-metric]:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
-
-/* Keep the dark Current Inventory card readable after button reset. */
-button.metric[data-summary-metric="current"]{color:#fff}
+/* The dark card follows the VIN bucket, not its position. */
+button.metric[data-summary-metric][aria-pressed="false"]{background:#fff;color:#19313d}
+button.metric[data-summary-metric][aria-pressed="true"]{background:#19313d;color:#fff;border-color:#19313d;box-shadow:inset 0 0 0 2px #fff}
+button.metric[data-summary-metric]:focus-visible{outline:3px solid #005fcc;outline-offset:2px}
+@media(forced-colors:active){
+ button.metric[data-summary-metric][aria-pressed="false"]{border-color:ButtonText}
+ button.metric[data-summary-metric][aria-pressed="true"]{forced-color-adjust:none;background:Highlight;color:HighlightText;border-color:Highlight;box-shadow:inset 0 0 0 2px HighlightText}
+ button.metric[data-summary-metric]:focus-visible{outline-color:Highlight}
+}
 </style></head>
 <body><header><div class="brand">EV6 <span>2027 Tracker</span></div><div class="header-links"><a href="#movement">Trends</a><a href="#inventory">Inventory</a><a href="#returns">Reappearances</a><a href="#research">Research</a></div><span class="readonly">Read-only daily snapshot</span></header>
 <main><div class="heading"><div><p class="eyebrow">KIA EV6 &middot; MODEL YEAR 2027 &middot; NATIONAL INVENTORY</p><h1>Inventory &amp; market movement</h1><p class="muted" id="capture"></p></div><div class="snapshot-note" id="freshness"></div></div>
@@ -749,7 +755,23 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeFilter(true);})
 function inView(r){return view==='added'?!!r.daily_added:view==='removed'?!!r.daily_removed:view==='current'?r.current:view==='master'?true:view==='favorites'?favorites.includes(r.vin):view==='regional'?r.current&&['VA','MD','DC'].includes(r.dealerState):view==='newest'?r.current:!!r[view];}
 function selectRows(){const words=$('search').value.toLowerCase().trim().split(/\s+/).filter(Boolean);let rows=data.rows.filter(r=>inView(r)&&Object.entries(filters).every(([k,s])=>!s.size||s.has(r[k]||''))&&words.every(w=>[r.vin,r.dealerName,r.dealerCity,r.dealerState,r.dealerZip,r.trim,r.drivetrain,r.extColor,r.intColor,status(r.status)].join(' ').toLowerCase().includes(w)));if(view==='newest')rows=rows.sort((a,b)=>b.serial-a.serial).slice(0,100);return rows.sort((a,b)=>{const x=sort==='discount'?discount(a):a[sort],y=sort==='discount'?discount(b):b[sort];if(['serial','msrp','dealerPrice','discount'].includes(sort)){const nx=number(x),ny=number(y);return nx===null||ny===null?nx===ny?0:nx===null?1:-1:direction*(nx-ny)||a.vin.localeCompare(b.vin);}return direction*String(x||'').localeCompare(String(y||''),undefined,{numeric:true})||a.vin.localeCompare(b.vin);});}
 const baseColumns=[['vin','VIN / details'],['trim','Trim'],['drivetrain','Drivetrain'],['extColor','Exterior color'],['intColor','Interior'],['dealerName','Dealer'],['dealerCity','City'],['dealerState','State'],['dealerZip','Dealer ZIP'],['status','Inventory status'],['first_seen','First seen'],['last_seen','Last seen']];
+function activeSummaryMetric(){
+ if(view!=='current')return view;
+ const selected=filters.status;
+ if(!selected.size)return 'current';
+ if(selected.size!==1)return null;
+ if(selected.has('DS'))return 'ds';
+ if(selected.has('IT'))return 'it';
+ return null;
+}
+function syncSummaryCards(){
+ const key=activeSummaryMetric();
+ for(const card of $('metrics').querySelectorAll('button[data-summary-metric]')){
+  card.setAttribute('aria-pressed',String(card.dataset.summaryMetric===key));
+ }
+}
 function render(){
+ syncSummaryCards();
  const rows=selectRows();page=Math.max(0,Math.min(page,Math.ceil(rows.length/pageSize)-1));for(const [k,c] of Object.entries(controls)){const s=[...filters[k]];c.button.textContent=s.length===0?'All':s.length===1?(k==='status'?status(s[0]):s[0]||'Unknown'):s.length+' selected';for(const o of c.options)o.box.checked=filters[k].has(o.value);}
  $('view-title').textContent=titles[view];$('result-count').textContent=rows.length+' matching vehicles · '+titles[view];$('scope-label').textContent=Object.values(filters).some(s=>s.size)||$('search').value?'Active criteria · '+rows.length+' matching VINs':'All VINs in selected view';
  const columns=[...baseColumns,...[['msrp','MSRP'],['dealerPrice','Advertised Dealer Price'],['discount','Discount']]],head=el('tr');for(const [key,title] of columns){const th=el('th');th.scope='col';th.setAttribute('aria-sort',sort===key?(direction===1?'ascending':'descending'):'none');const b=el('button',title+(sort===key?(direction===1?' ↑':' ↓'):''));b.onclick=()=>{direction=sort===key?-direction:1;sort=key;render();};th.append(b);head.append(th);}$('head').replaceChildren(head);$('body').replaceChildren();
@@ -801,10 +823,6 @@ for(const [key,n,label,note] of [
   $('vehicle-detail').hidden=true;
   apply({view:key==='ds'||key==='it'?'current':key,q:'',filters:key==='ds'||key==='it'?{status:[key.toUpperCase()]}:{}});
   
-  const target=$('vehicle-table');
-  target.tabIndex=-1;
-  target.focus({preventScroll:true});
-  target.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});
  };
  card.append(el('span',label),el('strong',n),el('small',note));$('metrics').append(card);
 }
@@ -849,15 +867,34 @@ render();savedList();trends();if(location.hash.startsWith('#search=')){try{const
   return {months,baseline,through,coverageDates:dates,estimateRule:'DS disappearance confirmed after two complete missing runs; returns removed.'};
  }
  const evidence=calculate();window.monthlyMovementEvidence=evidence;
- const section=el('section',undefined,'panel');section.id='monthly-movement';section.append(el('h2','Monthly new VINs & presumed sales'));
- section.append(el('p','New VINs: unique first observations after the initial baseline. Presumed sales: currently unresolved DS disappearances, grouped by first-absence month. Estimate, not confirmed transactions.','muted'));
- const legend=el('p');legend.append(el('span','New observed VINs (teal) · '),el('span','Unresolved presumed sales (orange)'));section.append(legend);
- const plot=el('div',undefined,'monthly-chart'),ns='http://www.w3.org/2000/svg';function svg(tag,attrs,text){const x=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))x.setAttribute(k,v);if(text!==undefined)x.textContent=text;return x;}
- const rows=evidence.months||[],w=Math.max(650,rows.length*150),chart=svg('svg',{viewBox:`0 0 ${w} 300`,role:'img','aria-label':'Monthly first observations and current unresolved presumed-sales estimates'}),max=Math.max(1,...rows.flatMap(r=>[r.newVins||0,r.presumedSales||0]));
- for(let i=0;i<=4;i++){const v=Math.ceil(max*i/4),y=235-v/max*185;chart.append(svg('line',{x1:50,x2:w-15,y1:y,y2:y,stroke:'#dce5e3'}),svg('text',{x:44,y:y+4,'text-anchor':'end',fill:'#62747b','font-size':12},v));}
- rows.forEach((r,i)=>{const x=65+i*(w-70)/Math.max(1,rows.length),bw=Math.min(42,(w-90)/Math.max(1,rows.length)/3);for(const [j,key,color] of [[0,'newVins','#147d71'],[1,'presumedSales','#cc8241']]){const v=r[key];if(v!==null){const bar=svg('rect',{x:x+j*(bw+5),y:235-v/max*185,width:bw,height:v/max*185,rx:3,fill:color,tabindex:0});bar.append(svg('title',{},`${r.month}: ${key==='newVins'?'new observed VINs':'unresolved presumed sales'} ${v}`));chart.append(bar);}}chart.append(svg('text',{x:x+bw,y:258,'text-anchor':'middle','font-size':12,fill:'#19313d'},r.month),svg('text',{x:x+bw,y:275,'text-anchor':'middle','font-size':11,fill:'#62747b'},r.captureDays?(r.partial?'Partial / to date':'Observed month'):'No coverage'));});plot.append(chart);section.append(plot);
- const details=el('details');details.append(el('summary','Monthly values and coverage'));const table=el('table',undefined,'monthly-table'),head=el('tr');for(const t of ['Month','New observed VINs','Unresolved presumed sales','Complete capture days'])head.append(el('th',t));const thead=el('thead');thead.append(head);table.append(thead);const body=el('tbody');for(const r of rows){const tr=el('tr');for(const v of [r.month+(r.partial?' (partial / to date)':''),r.newVins??'N/A',r.presumedSales??'N/A',r.captureDays])tr.append(el('td',String(v)));body.append(tr);}table.append(body);details.append(table);section.append(details);
- section.append(el('p',`${evidence.estimateRule||''} Baseline ${evidence.baseline?date(evidence.baseline):'unavailable'}; through ${evidence.through?date(evidence.through):'unavailable'} (Eastern). Initial baseline inventory is excluded. Returns can revise earlier month estimates; repeated disappearances count only the latest open episode. Months without complete capture coverage are N/A, not zero. Collection gaps do not prove absence. First observation is not production date.`,'muted'));
+ const monthlyFmt=new Intl.NumberFormat('en-US');
+ const section=el('section',undefined,'panel');section.id='monthly-movement';section.setAttribute('aria-label','Monthly observed VINs and estimated presumed sales');section.append(el('h2','Monthly observed VINs & estimated presumed sales'));
+ section.append(el('p','New VINs are distinct first observations after the initial tracker baseline. Estimated presumed sales are unresolved Dealer Stock disappearances, assigned to the month first observed absent. Returns remove VINs from the estimate, so earlier months can change.','muted'));
+ const legend=el('p');const newLegend=el('strong','New observed VINs'),salesLegend=el('strong','Estimated presumed sales');newLegend.style.color='#10645b';salesLegend.style.color='#794717';legend.append(newLegend,el('span',' · '),salesLegend);section.append(legend);
+ const plot=el('div',undefined,'monthly-chart'),ns='http://www.w3.org/2000/svg';plot.tabIndex=0;plot.setAttribute('role','region');plot.setAttribute('aria-label','Scrollable monthly chart');function svg(tag,attrs,text){const x=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))x.setAttribute(k,v);if(text!==undefined)x.textContent=text;return x;}
+ const rows=evidence.months||[],w=Math.max(620,rows.length*112),chart=svg('svg',{viewBox:`0 0 ${w} 248`,role:'img','aria-label':'Monthly first observations and current unresolved presumed-sales estimates. Exact values and coverage follow in the table.'}),max=Math.max(1,...rows.flatMap(r=>[r.newVins||0,r.presumedSales||0]));
+ const step=(w-60)/Math.max(1,rows.length);
+ for(let i=0;i<=4;i++){const v=Math.ceil(max*i/4),y=195-v/max*151;chart.append(svg('line',{x1:50,x2:w-9,y1:y,y2:y,stroke:'#dce5e3'}));}
+ rows.forEach((r,i)=>{const center=50+step*(i+.5);for(const [j,key,color,ink] of [[0,'newVins','#147d71','#10645b'],[1,'presumedSales','#cc8241','#794717']]){const v=r[key],h=(v||0)/max*151,x=center+(j?5:-37);if(v!=null){const bar=svg('rect',{x,y:195-h,width:32,height:h,rx:3,fill:color});bar.append(svg('title',{},`${r.month}: ${key==='newVins'?'new observed VINs':'estimated presumed sales'} ${v}`));chart.append(bar);}chart.append(svg('text',{x:x+16,y:Math.max(22,187-h),'text-anchor':'middle','font-size':12,fill:ink},v==null?'N/A':monthlyFmt.format(v)));}chart.append(svg('text',{x:center,y:222,'text-anchor':'middle','font-size':13,fill:'#19313d'},r.month));});
+ if(!rows.length)section.append(el('p','No accepted history is available. Unknown does not mean zero.','muted'));else{plot.append(chart);section.append(plot);}
+ const dates=Array.isArray(evidence.coverageDates)?new Set(evidence.coverageDates):null;
+ function coverage(r){
+  const count=Number.isInteger(r.captureDays)&&r.captureDays>=0?r.captureDays:null;
+  const unknown=count===null?'N/A':`${count} complete capture day(s); dates or eligible days unavailable`;
+  if(!dates||count===null||!/^\d{4}-(0[1-9]|1[0-2])$/.test(r.month))return unknown;
+  const b=new Date(evidence.baseline),t=new Date(evidence.through);
+  if(!evidence.baseline||!evidence.through||!Number.isFinite(+b)||!Number.isFinite(+t)||+b>+t)return unknown;
+  const before=date(b),after=date(t),startOfMonth=r.month+'-01';
+  const [y,m]=r.month.split('-').map(Number),endOfMonth=r.month+'-'+new Date(Date.UTC(y,m,0)).getUTCDate();
+  const start=before>startOfMonth?before:startOfMonth,end=after<endOfMonth?after:endOfMonth;
+  if(start>end)return unknown;
+  let observed=0,eligible=0;
+  for(let day=Date.parse(start+'T00:00:00Z'),last=Date.parse(end+'T00:00:00Z');day<=last;day+=86400000){eligible++;if(dates.has(new Date(day).toISOString().slice(0,10)))observed++;}
+  if(observed!==count||!eligible)return unknown;
+  return `${observed}/${eligible} days, ${start} to ${end}${eligible>observed?'; '+(eligible-observed)+' missing day(s)':''}`;
+ }
+ if(rows.length){const table=el('table',undefined,'monthly-table');table.append(el('caption','Monthly values and coverage'));const head=el('tr');for(const t of ['Month','New observed VINs','Estimated presumed sales','Observation coverage (Eastern)']){const th=el('th',t);th.scope='col';head.append(th);}const thead=el('thead');thead.append(head);table.append(thead);const body=el('tbody');for(const r of rows){const tr=el('tr'),month=el('th',r.month+(r.partial?' (partial)':''));month.scope='row';tr.append(month);for(const v of [r.newVins==null?'N/A':monthlyFmt.format(r.newVins),r.presumedSales==null?'N/A':monthlyFmt.format(r.presumedSales),coverage(r)])tr.append(el('td',v));body.append(tr);}table.append(body);const scroll=el('div',undefined,'table-scroll');scroll.tabIndex=0;scroll.setAttribute('role','region');scroll.setAttribute('aria-label','Scrollable monthly table');scroll.append(table);section.append(scroll);}
+ section.append(el('p',`${evidence.estimateRule||''} Baseline ${evidence.baseline?date(evidence.baseline):'unavailable'}; through ${evidence.through?date(evidence.through):'unavailable'} (Eastern). Initial baseline inventory is excluded. Returns can revise earlier estimates; repeated disappearances count only the latest open episode. Months without complete capture coverage are N/A, not zero. Collection gaps do not prove absence. First observation is not production date and estimates are not confirmed transactions. National totals are not changed by inventory filters.`,'muted'));
  if(!ev3&&data.model_year===2026)section.append(el('p','Historical coverage changed from 7 to 59 search areas. Discovery changes may reflect search coverage, not new production or sales.','muted'));
  const used=new Set();function add(node){if(node&&!used.has(node)){m.append(node);used.add(node);}}
  m.replaceChildren();for(const q of ['.heading','.metrics','.health','#views','#inventory','.breakdown-heading','.breakdown-grid','#vehicle-table'])add(original.find(n=>n.matches(q)));add(section);
