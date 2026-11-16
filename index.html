@@ -100,6 +100,53 @@ button.metric[data-summary-metric]:focus-visible{outline:3px solid #005fcc;outli
  button.metric[data-summary-metric][aria-pressed="true"]{forced-color-adjust:none;background:Highlight;color:HighlightText;border-color:Highlight;box-shadow:inset 0 0 0 2px HighlightText}
  button.metric[data-summary-metric]:focus-visible{outline-color:Highlight}
 }
+
+/* Compact inventory table (only cells that explicitly carry these classes). */
+#head .inventory-pricing-compact,#body .inventory-pricing-compact{display:none}
+#body .inventory-pricing-compact{white-space:nowrap}
+#body .inventory-pricing-compact .inventory-price-line{display:grid;grid-template-columns:auto auto;gap:6px;justify-content:space-between;font-variant-numeric:tabular-nums}
+#body .inventory-pricing-compact .inventory-price-line+.inventory-price-line{margin-top:2px}
+#body .inventory-pricing-compact .inventory-price-label{font-size:.82em;opacity:.85}
+#body .inventory-observation-date{white-space:nowrap;font-variant-numeric:tabular-nums}
+#body .inventory-status-context{display:block;margin-top:2px;font-size:.82em}
+@media(max-width:650px){
+ #head .inventory-pricing-desktop,#body .inventory-pricing-desktop{display:none}
+ #head .inventory-pricing-compact,#body .inventory-pricing-compact{display:table-cell}
+}
+
+.ev-color-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: .4em;
+}
+.ev-color-chip {
+  display: inline-block;
+  flex: 0 0 auto;
+  inline-size: .8em;
+  block-size: .8em;
+  box-sizing: border-box;
+  border: 1px solid #596675;
+  border-radius: .2em;
+  background: var(--ev-approx-paint);
+}
+.ev-color-chip--ink { --ev-approx-paint: #23242a; }
+.ev-color-chip--white { --ev-approx-paint: #f3f2ed; }
+.ev-color-chip--paleBlue { --ev-approx-paint: #a8c7d8; }
+.ev-color-chip--deepBlue { --ev-approx-paint: #315576; }
+.ev-color-chip--graphite { --ev-approx-paint: #515963; }
+.ev-color-chip--gray { --ev-approx-paint: #90969a; }
+.ev-color-chip--lightGray { --ev-approx-paint: #c7c4be; }
+.ev-color-chip--red { --ev-approx-paint: #b22636; }
+.ev-color-chip--brown { --ev-approx-paint: #765647; }
+.ev-color-chip--black-roof {
+  background: linear-gradient(to bottom, #23242a 0 35%, var(--ev-approx-paint) 35% 100%);
+}
+@media (forced-colors: active) {
+  .ev-color-chip {
+    background: Canvas;
+    border-color: CanvasText;
+  }
+}
 </style></head>
 <body><header><div class="brand">EV6 <span>2027 Tracker</span></div><div class="header-links"><a href="#movement">Trends</a><a href="#inventory">Inventory</a><a href="#returns">Reappearances</a><a href="#research">Research</a></div><span class="readonly">Read-only daily snapshot</span></header>
 <main><div class="heading"><div><p class="eyebrow">KIA EV6 &middot; MODEL YEAR 2027 &middot; NATIONAL INVENTORY</p><h1>Inventory &amp; market movement</h1><p class="muted" id="capture"></p></div><div class="snapshot-note" id="freshness"></div></div>
@@ -728,6 +775,55 @@ button.metric[data-summary-metric]:focus-visible{outline:3px solid #005fcc;outli
 "use strict";
 'use strict';
 const data=JSON.parse(document.getElementById('inventory-data').textContent),$=id=>document.getElementById(id);
+// Decorative approximation of paint families, not color-matched paint.
+const exteriorSwatch = (() => {
+  const groups = {
+    ink: ['Aurora Black Pearl', 'Ebony Black'],
+    white: ['Glacial White', 'Glacial White Pearl', 'Snow White Pearl'],
+    paleBlue: ['Frost Blue'],
+    deepBlue: ['Midnight Lake Blue', 'Nebular Blue', 'Ocean Blue'],
+    graphite: ['Interstellar Gray', 'Panthera Metal', 'Panthera Metal Matte'],
+    gray: ['Wolf Gray'],
+    lightGray: ['Morning Haze', 'Ivory Silver'],
+    red: ['Runway Red'],
+    brown: ['Road Rider Brown'],
+  };
+  const key = value => typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').toLowerCase() : '';
+  const palette = new Map(Object.entries(groups).flatMap(([family, names]) => names.map(name => [key(name), family])));
+  // Exact known feed variants only; never interpret arbitrary prefixes or suffixes.
+  const blackRoof = new Map([
+    ['Frost Blue / Black Roof','Frost Blue'],
+    ['Snow White Pearl / Black Roof','Snow White Pearl'],
+    ['Glacial White Pearl / Black Ro','Glacial White Pearl'],
+    ['Glacial White Pearl / Black Roof','Glacial White Pearl'],
+    ['Glacial White Pearl W/ Ebony Black Roof','Glacial White Pearl'],
+    ['Wolf Gray / Black Roof','Wolf Gray'],
+    ['Wolf Gray W/ Ebony Black Roof','Wolf Gray'],
+  ].map(([alias, name]) => [key(alias), key(name)]));
+  function describe(value) {
+    const label = key(value);
+    const roof = blackRoof.has(label);
+    const family = palette.get(roof ? blackRoof.get(label) : label);
+    return family === undefined ? null : {family, roof};
+  }
+  function append(td, rawValue, displayedLabel = (rawValue || 'Unknown')) {
+    const family = describe(rawValue);
+    const document = td.ownerDocument;
+    if (family === null) {
+      td.append(document.createTextNode(displayedLabel));
+      return;
+    }
+    const wrap = document.createElement('span');
+    wrap.className = 'ev-color-label';
+    const chip = document.createElement('span');
+    chip.className = 'ev-color-chip ev-color-chip--' + family.family +
+      (family.roof ? ' ev-color-chip--black-roof' : '');
+    chip.setAttribute('aria-hidden', 'true');
+    wrap.append(chip, document.createTextNode(displayedLabel));
+    td.append(wrap);
+  }
+  return Object.freeze({describe, append});
+})();
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
 const when=s=>s?new Date(s).toLocaleString('en-US',{timeZone:'America/New_York',dateStyle:'medium',timeStyle:'short'})+' ET':'Insufficient history';
 const number=v=>v!==null&&v!==undefined&&String(v).trim()!==''&&Number.isFinite(Number(v))?Number(v):null;
@@ -753,8 +849,29 @@ for(const [key,label] of Object.entries(fields)){
 }
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeFilter(true);});document.addEventListener('pointerdown',e=>{if(openFilter&&!controls[openFilter].panel.contains(e.target)&&!controls[openFilter].button.contains(e.target))closeFilter();});addEventListener('resize',positionFilter);addEventListener('scroll',positionFilter,true);
 function inView(r){return view==='added'?!!r.daily_added:view==='removed'?!!r.daily_removed:view==='current'?r.current:view==='master'?true:view==='favorites'?favorites.includes(r.vin):view==='regional'?r.current&&['VA','MD','DC'].includes(r.dealerState):view==='newest'?r.current:!!r[view];}
-function selectRows(){const words=$('search').value.toLowerCase().trim().split(/\s+/).filter(Boolean);let rows=data.rows.filter(r=>inView(r)&&Object.entries(filters).every(([k,s])=>!s.size||s.has(r[k]||''))&&words.every(w=>[r.vin,r.dealerName,r.dealerCity,r.dealerState,r.dealerZip,r.trim,r.drivetrain,r.extColor,r.intColor,status(r.status)].join(' ').toLowerCase().includes(w)));if(view==='newest')rows=rows.sort((a,b)=>b.serial-a.serial).slice(0,100);return rows.sort((a,b)=>{const x=sort==='discount'?discount(a):a[sort],y=sort==='discount'?discount(b):b[sort];if(['serial','msrp','dealerPrice','discount'].includes(sort)){const nx=number(x),ny=number(y);return nx===null||ny===null?nx===ny?0:nx===null?1:-1:direction*(nx-ny)||a.vin.localeCompare(b.vin);}return direction*String(x||'').localeCompare(String(y||''),undefined,{numeric:true})||a.vin.localeCompare(b.vin);});}
+function selectRows(){const words=$('search').value.toLowerCase().trim().split(/\s+/).filter(Boolean);let rows=data.rows.filter(r=>inView(r)&&Object.entries(filters).every(([k,s])=>!s.size||s.has(r[k]||''))&&words.every(w=>[r.vin,r.dealerName,r.dealerCity,r.dealerState,r.dealerZip,r.trim,r.drivetrain,r.extColor,r.intColor,status(r.status)].join(' ').toLowerCase().includes(w)));if(view==='newest')rows=rows.sort((a,b)=>b.serial-a.serial).slice(0,100);return rows.sort((a,b)=>{const x=sort==='discount'?discount(a):sort==='location'?inventoryLocation(a):a[sort],y=sort==='discount'?discount(b):sort==='location'?inventoryLocation(b):b[sort];if(['serial','msrp','dealerPrice','discount'].includes(sort)){const nx=number(x),ny=number(y);return nx===null||ny===null?nx===ny?0:nx===null?1:-1:direction*(nx-ny)||a.vin.localeCompare(b.vin);}return direction*String(x||'').localeCompare(String(y||''),undefined,{numeric:true})||a.vin.localeCompare(b.vin);});}
 const baseColumns=[['vin','VIN / details'],['trim','Trim'],['drivetrain','Drivetrain'],['extColor','Exterior color'],['intColor','Interior'],['dealerName','Dealer'],['dealerCity','City'],['dealerState','State'],['dealerZip','Dealer ZIP'],['status','Inventory status'],['first_seen','First seen'],['last_seen','Last seen']];
+const compactPricingColumns=[['msrp','MSRP'],['dealerPrice','Dealer price'],['discount','Discount']];
+const inventoryLocation=r=>[r.dealerCity,r.dealerState].filter(Boolean).join(', ');
+const inventoryDateET=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'});
+function inventoryDate(value){
+ if(!value)return '—';
+ const parsed=new Date(value);
+ return Number.isNaN(parsed.getTime())?'—':inventoryDateET.format(parsed);
+}
+function inventoryPrice(r,key){
+ const v=key==='discount'?discount(r):number(r[key]);
+ return key==='discount'&&v<0?'Markup '+money(-v):money(v);
+}
+function inventoryPrices(td,r){
+ td.classList.add('inventory-pricing-compact');
+ for(const [key,label] of compactPricingColumns){
+  const line=el('div',undefined,'inventory-price-line');
+  line.append(el('span',label,'inventory-price-label'),el('span',inventoryPrice(r,key)));
+  td.append(line);
+ }
+ if(!r.current)td.append(el('small','Last observed'));
+}
 function activeSummaryMetric(){
  if(view!=='current')return view;
  const selected=filters.status;
@@ -774,8 +891,8 @@ function render(){
  syncSummaryCards();
  const rows=selectRows();page=Math.max(0,Math.min(page,Math.ceil(rows.length/pageSize)-1));for(const [k,c] of Object.entries(controls)){const s=[...filters[k]];c.button.textContent=s.length===0?'All':s.length===1?(k==='status'?status(s[0]):s[0]||'Unknown'):s.length+' selected';for(const o of c.options)o.box.checked=filters[k].has(o.value);}
  $('view-title').textContent=titles[view];$('result-count').textContent=rows.length+' matching vehicles · '+titles[view];$('scope-label').textContent=Object.values(filters).some(s=>s.size)||$('search').value?'Active criteria · '+rows.length+' matching VINs':'All VINs in selected view';
- const columns=[...baseColumns,...[['msrp','MSRP'],['dealerPrice','Advertised Dealer Price'],['discount','Discount']]],head=el('tr');for(const [key,title] of columns){const th=el('th');th.scope='col';th.setAttribute('aria-sort',sort===key?(direction===1?'ascending':'descending'):'none');const b=el('button',title+(sort===key?(direction===1?' ↑':' ↓'):''));b.onclick=()=>{direction=sort===key?-direction:1;sort=key;render();};th.append(b);head.append(th);}$('head').replaceChildren(head);$('body').replaceChildren();
- for(const r of rows.slice(page*pageSize,(page+1)*pageSize)){const tr=el('tr');for(const [key] of columns){const td=el('td');if(key==='vin'){const star=el('button',favorites.includes(r.vin)?'★':'☆','star');star.setAttribute('aria-label',(favorites.includes(r.vin)?'Unfavorite ':'Favorite ')+r.vin);star.onclick=()=>{favorites=favorites.includes(r.vin)?favorites.filter(v=>v!==r.vin):[...favorites,r.vin];persist();render();};const b=el('button',r.vin,'vin-link');b.onclick=()=>details(r);td.append(star,b);}else if(key==='dealerName'){dealerNameCell(td,r.dealerName,r.dealerUrl);}else if(key==='status')td.append(el('span',r.current?status(r.status):'Absent / Dropped','badge '+(!r.current?'absent':r.status==='IT'?'transit':'')));else if(['msrp','dealerPrice','discount'].includes(key)){const v=key==='discount'?discount(r):number(r[key]);td.className='price-cell';td.textContent=key==='discount'&&v<0?'Markup '+money(-v):money(v);if(!r.current)td.append(el('small','Last observed'));}else td.textContent=key.endsWith('_seen')?when(r[key]):r[key]||'Unknown';tr.append(td);}$('body').append(tr);}
+ const columns=[...baseColumns.filter(([key])=>!['dealerState','dealerZip'].includes(key)).map(c=>c[0]==='dealerCity'?['location','Location']:c[0]==='status'?['status','Status']:c),...compactPricingColumns,['pricingCompact','Pricing']],head=el('tr');for(const [key,title] of columns){const th=el('th');th.scope='col';if(compactPricingColumns.some(([k])=>k===key))th.classList.add('inventory-pricing-desktop');if(key==='pricingCompact'){th.classList.add('inventory-pricing-compact');th.textContent=title;head.append(th);continue;}th.setAttribute('aria-sort',sort===key?(direction===1?'ascending':'descending'):'none');const b=el('button',title+(sort===key?(direction===1?' ↑':' ↓'):''));b.onclick=()=>{direction=sort===key?-direction:1;sort=key;render();};th.append(b);head.append(th);}$('head').replaceChildren(head);$('body').replaceChildren();
+ for(const r of rows.slice(page*pageSize,(page+1)*pageSize)){const tr=el('tr');for(const [key] of columns){const td=el('td');td.dataset.column=key;if(key==='pricingCompact'){inventoryPrices(td,r);}else if(key==='location'){td.textContent=inventoryLocation(r)||'—';}else if(key==='vin'){const star=el('button',favorites.includes(r.vin)?'★':'☆','star');star.setAttribute('aria-label',(favorites.includes(r.vin)?'Unfavorite ':'Favorite ')+r.vin);star.onclick=()=>{favorites=favorites.includes(r.vin)?favorites.filter(v=>v!==r.vin):[...favorites,r.vin];persist();render();};const b=el('button',r.vin,'vin-link');b.onclick=()=>details(r);td.append(star,b);}else if(key==='dealerName'){dealerNameCell(td,r.dealerName,r.dealerUrl);}else if(key==='status'){td.append(el('span',r.current?status(r.status):'Absent / Dropped','badge '+(!r.current?'absent':r.status==='IT'?'transit':'')));if(!r.current&&r.status)td.append(el('small','Last: '+status(r.status),'inventory-status-context'));}else if(compactPricingColumns.some(([k])=>k===key)){td.className='price-cell inventory-pricing-desktop';td.textContent=inventoryPrice(r,key);if(!r.current)td.append(el('small','Last observed'));}else if(key.endsWith('_seen')){td.classList.add('inventory-observation-date');td.textContent=inventoryDate(r[key]);}else if(key==='extColor'){exteriorSwatch.append(td,r.extColor,r.extColor||'Unknown');}else td.textContent=r[key]||'Unknown';tr.append(td);}$('body').append(tr);}
  if(!rows.length){const td=el('td','No matching vehicles. Reset filters or choose another view.','empty');td.colSpan=columns.length;const tr=el('tr');tr.append(td);$('body').append(tr);}$('page').textContent=`Page ${rows.length?page+1:0} / ${Math.ceil(rows.length/pageSize)}`;$('prev').disabled=page===0;$('next').disabled=(page+1)*pageSize>=rows.length;
  $('mix-caption').textContent=rows.length+' matching vehicles · Select a bar to narrow this view';barChart('combinations',rows,r=>r.trim+' · '+r.drivetrain,label=>{const [t,d]=label.split(' · ');filters.trim=new Set([t]);filters.drivetrain=new Set([d]);});barChart('colors',rows,r=>r.extColor,label=>filters.extColor=new Set([label]));const group=$('geography-mode').value;barChart('geography',rows,r=>r[group],label=>filters[group]=new Set([label]));
 }
